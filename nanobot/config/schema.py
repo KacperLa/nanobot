@@ -237,6 +237,14 @@ class SignalConfig(Base):
         return list(dict.fromkeys(self.dm.allow_from + self.group.allow_from))
 
 
+class ApiChannelConfig(Base):
+    """Unix-socket API channel configuration (for web UI / external clients)."""
+
+    enabled: bool = False
+    socket_path: str = ""  # defaults to ~/.nanobot/api.sock when empty
+    allow_from: list[str] = Field(default_factory=lambda: ["*"])  # allow all by default
+
+
 class ChannelsConfig(Base):
     """Configuration for chat channels."""
 
@@ -253,6 +261,7 @@ class ChannelsConfig(Base):
     qq: QQConfig = Field(default_factory=QQConfig)
     signal: SignalConfig = Field(default_factory=SignalConfig)
     matrix: MatrixConfig = Field(default_factory=MatrixConfig)
+    api: ApiChannelConfig = Field(default_factory=ApiChannelConfig)
 
 
 class AgentDefaults(Base):

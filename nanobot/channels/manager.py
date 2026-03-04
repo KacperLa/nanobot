@@ -162,6 +162,16 @@ class ChannelManager:
             except ImportError as e:
                 logger.warning("Matrix channel not available: {}", e)
 
+        # API channel (Unix socket for web UI / external clients)
+        self._api_channel: "ApiChannel | None" = None
+        if self.config.channels.api.enabled:
+            from nanobot.channels.api import ApiChannel
+
+            api_ch = ApiChannel(self.config.channels.api, self.bus)
+            self.channels["api"] = api_ch
+            self._api_channel = api_ch
+            logger.info("API channel enabled ({})", api_ch._socket_path)
+
         self._validate_allow_from()
 
     def _validate_allow_from(self) -> None:
@@ -252,7 +262,7 @@ class ChannelManager:
         """Get a channel by name."""
         return self.channels.get(name)
 
-    def get_api_channel(self) -> ApiChannel | None:
+    def get_api_channel(self) -> "BaseChannel | None":
         """Get the API channel instance if enabled."""
         return self._api_channel
 
