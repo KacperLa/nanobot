@@ -252,6 +252,10 @@ class ChannelManager:
         """Get a channel by name."""
         return self.channels.get(name)
 
+    def get_api_channel(self) -> ApiChannel | None:
+        """Get the API channel instance if enabled."""
+        return self._api_channel
+
     def get_status(self) -> dict[str, Any]:
         """Get status of all channels."""
         return {

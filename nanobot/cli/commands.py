@@ -312,7 +312,6 @@ def gateway(
             f"Task '{job.name}' has been triggered.\n"
             f"Scheduled instruction: {job.payload.message}"
         )
-
         # Prevent the agent from scheduling new cron jobs during execution
         cron_tool = agent.tools.get("cron")
         cron_token = None
@@ -524,7 +523,6 @@ def agent(
         console.print(
             f"{__logo__} Interactive mode (type [bold]exit[/bold] or [bold]Ctrl+C[/bold] to quit)\n"
         )
-
         if ":" in session_id:
             cli_channel, cli_chat_id = session_id.split(":", 1)
         else:

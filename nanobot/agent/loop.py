@@ -478,10 +478,16 @@ class AgentLoop:
                 )
             )
 
-        final_content, _, all_msgs = await self._run_agent_loop(
-            initial_messages,
-            on_progress=on_progress or _bus_progress,
-        )
+        if self._api_channel:
+            await self._api_channel.push_agent_state(msg.chat_id, "thinking")
+        try:
+            final_content, _, all_msgs = await self._run_agent_loop(
+                initial_messages,
+                on_progress=on_progress or _bus_progress,
+            )
+        finally:
+            if self._api_channel:
+                await self._api_channel.push_agent_state(msg.chat_id, "idle")
 
         if final_content is None:
             final_content = "I've completed processing but have no response to give."
