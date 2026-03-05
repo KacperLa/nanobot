@@ -299,9 +299,9 @@ def gateway(
         session_manager=session_manager,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
-    )
+        api_channel=channels.get_api_channel(),
+    )  # Set cron callback (needs agent)
 
-    # Set cron callback (needs agent)
     async def on_cron_job(job: CronJob) -> str | None:
         """Execute a cron job through the agent."""
         from nanobot.agent.tools.cron import CronTool

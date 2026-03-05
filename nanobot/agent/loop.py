@@ -65,6 +65,7 @@ class AgentLoop:
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
+        api_channel: Any | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
 
@@ -102,6 +103,7 @@ class AgentLoop:
         )
 
         self._running = False
+        self._api_channel = api_channel
         self._mcp_servers = mcp_servers or {}
         self._mcp_stack: AsyncExitStack | None = None
         self._mcp_connected = False
