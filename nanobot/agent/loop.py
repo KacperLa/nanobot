@@ -136,6 +136,12 @@ class AgentLoop:
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
+        if self._api_channel:
+            from nanobot.agent.tools.display import AskUserTool, ShowImageTool, ShowTextTool
+
+            self.tools.register(ShowTextTool(self._api_channel))
+            self.tools.register(ShowImageTool(self._api_channel))
+            self.tools.register(AskUserTool(self._api_channel))
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
@@ -166,6 +172,10 @@ class AgentLoop:
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
                     tool.set_context(channel, chat_id, *([message_id] if name == "message" else []))
+        for name in ("show_text", "show_image", "ask_user"):
+            if tool := self.tools.get(name):
+                if hasattr(tool, "set_chat_id"):
+                    tool.set_chat_id(chat_id)
 
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
@@ -459,6 +469,20 @@ class AgentLoop:
                 message_tool.start_turn()
 
         history = session.get_history(max_messages=self.memory_window)
+
+        # On the very first turn of an API session, prepend the on_connect_prompt
+        # as a synthetic acknowledged instruction so the agent adopts it immediately.
+        if (
+            not history
+            and msg.channel == "api"
+            and self._api_channel
+            and self._api_channel.on_connect_prompt
+        ):
+            history = [
+                {"role": "user", "content": self._api_channel.on_connect_prompt},
+                {"role": "assistant", "content": "Understood."},
+            ]
+
         initial_messages = self.context.build_messages(
             history=history,
             current_message=msg.content,
