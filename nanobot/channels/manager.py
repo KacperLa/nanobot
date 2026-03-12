@@ -234,9 +234,11 @@ class ChannelManager:
         while True:
             try:
                 msg = await asyncio.wait_for(self.bus.consume_outbound(), timeout=1.0)
+                channel = self.channels.get(msg.channel)
 
                 if msg.metadata.get("_progress"):
-                    if msg.metadata.get("_tool_hint") and not self.config.channels.send_tool_hints:
+                    allow_tool_hints = self.config.channels.send_tool_hints or msg.channel == "api"
+                    if msg.metadata.get("_tool_hint") and not allow_tool_hints:
                         continue
                     if (
                         not msg.metadata.get("_tool_hint")
@@ -244,7 +246,6 @@ class ChannelManager:
                     ):
                         continue
 
-                channel = self.channels.get(msg.channel)
                 if channel:
                     try:
                         await channel.send(msg)
