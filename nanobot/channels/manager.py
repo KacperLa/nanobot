@@ -117,6 +117,7 @@ class ChannelManager:
         self._dispatch_task: asyncio.Task | None = None
         self._started = False
         self._origin_reply_fingerprints: dict[tuple[str, str, str], str] = {}
+        self._api_channel: "ApiChannel | None" = None
 
         self._init_channels()
 
@@ -268,6 +269,14 @@ class ChannelManager:
                     "Channel runtime could not be loaded. Check gateway logs.",
                 )
                 logger.warning("{} channel not available: {}", name, exc)
+
+        if self.config.channels.api.enabled:
+            from nanobot.channels.api import ApiChannel
+
+            api_channel = ApiChannel(self.config.channels.api, self.bus)
+            self.channels["api"] = api_channel
+            self._api_channel = api_channel
+            logger.info("API channel enabled ({})", api_channel._socket_path)
 
         self._validate_allow_from()
 
@@ -912,6 +921,10 @@ class ChannelManager:
                     await asyncio.sleep(delay)
                 except asyncio.CancelledError:
                     raise  # Propagate cancellation during sleep
+
+    @property
+    def api_channel(self):
+        return self._api_channel
 
     def get_channel(self, name: str) -> BaseChannel | None:
         """Get a channel by name."""

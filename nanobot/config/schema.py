@@ -19,6 +19,15 @@ if TYPE_CHECKING:
     from nanobot.agent.tools.web import WebToolsConfig
 
 
+class ApiChannelConfig(Base):
+    """Unix-socket API channel configuration."""
+
+    enabled: bool = False
+    socket_path: str = ""
+    allow_from: list[str] = Field(default_factory=lambda: ["*"])
+    exposed_tools: list[str] = Field(default_factory=list)
+
+
 class ChannelsConfig(Base):
     """Configuration for chat channels.
 
@@ -36,6 +45,7 @@ class ChannelsConfig(Base):
     send_max_retries: int = Field(default=3, ge=0, le=10)  # Max delivery attempts (initial send included)
     transcription_provider: str = "groq"  # Deprecated: use top-level transcription.provider
     transcription_language: str | None = Field(default=None, pattern=r"^[a-z]{2,3}$")  # Deprecated: use top-level transcription.language
+    api: ApiChannelConfig = Field(default_factory=ApiChannelConfig)
 
 
 class TranscriptionConfig(Base):

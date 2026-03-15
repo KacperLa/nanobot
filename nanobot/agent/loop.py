@@ -802,6 +802,110 @@ class AgentLoop:
         budget = runtime.context_window_tokens - max(1, reserved_output) - 1024
         return budget if budget > 0 else max(128, runtime.context_window_tokens // 2)
 
+    def _resolve_api_exposed_tools(self, allowed_tools: set[str] | None = None) -> set[str]:
+        """Expand API exposure entries into concrete tool names.
+
+        Supports exact tool names, plus MCP server scopes like
+        ``mcp:home assistant`` to expose every ``mcp_home assistant_*`` tool.
+        """
+        specs = {
+            str(item).strip()
+            for item in (allowed_tools or set())
+            if str(item).strip()
+        }
+        if not specs:
+            return set()
+
+        resolved = {spec for spec in specs if not spec.startswith("mcp:")}
+        prefixes: list[str] = []
+        for spec in specs:
+            if not spec.startswith("mcp:"):
+                continue
+            server_name = spec[4:].strip()
+            if server_name:
+                prefixes.append(f"mcp_{server_name}_")
+
+        if prefixes:
+            for tool_name in self.tools.tool_names:
+                if any(tool_name.startswith(prefix) for prefix in prefixes):
+                    resolved.add(tool_name)
+
+        return resolved
+
+    async def list_api_tools(self, allowed_tools: set[str] | None = None) -> list[dict[str, Any]]:
+        """Return tools explicitly exposed through the API channel."""
+        requested = {str(item).strip() for item in (allowed_tools or set()) if str(item).strip()}
+        if not requested:
+            return []
+        if any(spec.startswith("mcp_") or spec.startswith("mcp:") for spec in requested):
+            await self._connect_mcp()
+        allowed = self._resolve_api_exposed_tools(requested)
+        if not allowed:
+            return []
+
+        tools: list[dict[str, Any]] = []
+        for name in sorted(allowed):
+            tool = self.tools.get(name)
+            if tool is None:
+                continue
+            tools.append(
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters,
+                }
+            )
+        return tools
+
+    async def call_api_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        allowed_tools: set[str] | None = None,
+    ) -> dict[str, Any]:
+        """Execute one tool explicitly exposed through the API channel."""
+        tool_name = str(name or "").strip()
+        if not tool_name:
+            raise ValueError("tool name is required")
+        if not isinstance(arguments, dict):
+            raise ValueError("tool arguments must be an object")
+
+        requested = {str(item).strip() for item in (allowed_tools or set()) if str(item).strip()}
+        if any(spec.startswith("mcp_") or spec.startswith("mcp:") for spec in requested):
+            await self._connect_mcp()
+        allowed = self._resolve_api_exposed_tools(requested)
+        if allowed and tool_name not in allowed:
+            raise LookupError(f"tool not exposed: {tool_name}")
+        if tool_name.startswith("mcp_"):
+            await self._connect_mcp()
+
+        tool = self.tools.get(tool_name)
+        if tool is None:
+            raise LookupError(f"tool not found: {tool_name}")
+
+        errors = tool.validate_params(arguments)
+        if errors:
+            raise ValueError("; ".join(errors))
+
+        result = await tool.execute(**arguments)
+        content = result if isinstance(result, str) else str(result)
+
+        parsed: Any = None
+        is_json = False
+        if content:
+            try:
+                parsed = json.loads(content)
+                is_json = True
+            except json.JSONDecodeError:
+                parsed = None
+
+        return {
+            "tool_name": tool_name,
+            "content": content,
+            "parsed": parsed,
+            "is_json": is_json,
+        }
+
     async def _run_agent_loop(
         self,
         initial_messages: list[dict],

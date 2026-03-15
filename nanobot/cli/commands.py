@@ -1980,6 +1980,12 @@ def _run_gateway(
         webui_runtime_surface=webui_runtime_surface,
         webui_runtime_capabilities=webui_runtime_capabilities,
     )
+    if channels.api_channel is not None:
+        exposed_tools = set(config.channels.api.exposed_tools)
+        channels.api_channel.set_tool_runtime(
+            list_tools=lambda: agent.list_api_tools(exposed_tools),
+            call_tool=lambda name, arguments: agent.call_api_tool(name, arguments, exposed_tools),
+        )
 
     def _pick_heartbeat_target() -> tuple[str, str]:
         """Pick a routable channel/chat target for heartbeat-triggered messages."""
