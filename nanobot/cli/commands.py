@@ -684,7 +684,7 @@ def gateway(
     )
 
     # Set cron callback (needs agent)
-    channels = ChannelManager(config, bus)
+    channels = ChannelManager(config, bus, session_manager=session_manager)
 
     if channels.api_channel is not None:
         exposed_tools = set(config.channels.api.exposed_tools)
@@ -809,7 +809,6 @@ def gateway(
         enabled=hb_cfg.enabled,
         timezone=config.agents.defaults.timezone,
     )
-
     if channels.enabled_channels:
         console.print(f"[green]✓[/green] Channels enabled: {', '.join(channels.enabled_channels)}")
     else:
