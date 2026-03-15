@@ -375,6 +375,88 @@ nanobot gateway
 </details>
 
 <details>
+<summary><b>Signal</b></summary>
+
+Requires **signal-cli** daemon running in the background.
+
+**1. Install and setup signal-cli**
+
+Follow the [signal-cli installation guide](https://github.com/AsamK/signal-cli#installation) to install and register/link your Signal account.
+
+**2. Start signal-cli daemon**
+
+```bash
+signal-cli -a +1234567890 daemon --http localhost:8080
+```
+
+**3. Configure nanobot**
+
+```json
+{
+  "channels": {
+    "signal": {
+      "enabled": true,
+      "account": "+1234567890",
+      "mentionAliases": ["nanobot"],
+      "daemonHost": "localhost",
+      "daemonPort": 8080,
+      "allowFrom": ["deadbeef-1234-5678-90ab-cdef12345678"],
+      "groupMessageBufferSize": 20,
+      "dm": {
+        "enabled": true,
+        "policy": "allowlist"
+      },
+      "group": {
+        "enabled": true,
+        "policy": "allowlist",
+        "allowFrom": ["deadbeefcafebabe1234567890abcdef"],
+        "requireMention": true
+      }
+    }
+  }
+}
+```
+
+**Configuration options:**
+
+**Top-level:**
+- `account`: Your Signal phone number (e.g., `"+1234567890"`)
+- `mentionAliases`: Optional visible @mention labels to accept when signal-cli omits mention metadata and only leaves the rendered label in `message` (for example `["nanobot"]`)
+- `daemonHost`: Hostname where signal-cli daemon is running (default: `"localhost"`)
+- `daemonPort`: Port number for signal-cli HTTP API (default: `8080`)
+- `allowFrom`: List of phone numbers or UUIDs allowed for direct messages (empty = deny all when `dm.policy` is `"allowlist"`)
+- `groupMessageBufferSize`: Number of recent group messages to keep for context (default: `20`)
+  - When the bot is mentioned in a group, it will include the last N messages as context
+  - Set to `0` to disable context buffering
+
+**DM configuration (`dm`):**
+- `enabled`: Whether to respond to direct messages (default: `false`)
+- `policy`: Access control policy
+  - `"open"`: Respond to all DMs
+  - `"allowlist"`: Only respond to whitelisted users (set via `allowFrom`)
+
+**Group configuration (`group`):**
+- `enabled`: Whether to respond in group chats (default: `false`)
+- `policy`: Which groups to operate in
+  - `"open"`: Respond in all groups
+  - `"allowlist"`: Only respond in whitelisted groups (set via `allowFrom`)
+- `allowFrom`: List of group IDs to allow (only used when `policy` is `"allowlist"`)
+- `requireMention`: Whether bot must be @mentioned to respond (default: `true`)
+
+**Available commands:**
+- `/reset` — Clear conversation history for this chat
+- `/help` — Show available commands
+
+**4. Run**
+
+```bash
+nanobot gateway
+```
+
+Now send a Signal message to your bot and it will respond!
+
+</details>
+<details>
 <summary><b>Matrix (Element)</b></summary>
 
 Install Matrix dependencies first:

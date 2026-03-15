@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import Any
 
 from loguru import logger
@@ -10,6 +11,7 @@ from loguru import logger
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.schema import Config
+from nanobot.session.manager import SessionManager
 
 
 class ChannelManager:
@@ -22,9 +24,10 @@ class ChannelManager:
     - Route outbound messages
     """
 
-    def __init__(self, config: Config, bus: MessageBus):
+    def __init__(self, config: Config, bus: MessageBus, session_manager: SessionManager | None = None):
         self.config = config
         self.bus = bus
+        self.session_manager = session_manager
         self.channels: dict[str, BaseChannel] = {}
         self._dispatch_task: asyncio.Task | None = None
 
@@ -48,7 +51,10 @@ class ChannelManager:
             if not enabled:
                 continue
             try:
-                channel = cls(section, self.bus)
+                kwargs: dict[str, Any] = {}
+                if "session_manager" in inspect.signature(cls.__init__).parameters:
+                    kwargs["session_manager"] = self.session_manager
+                channel = cls(section, self.bus, **kwargs)
                 channel.transcription_api_key = groq_key
                 self.channels[name] = channel
                 logger.info("{} channel enabled", cls.display_name)
