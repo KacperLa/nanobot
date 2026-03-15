@@ -581,8 +581,7 @@ class SignalChannel(BaseChannel):
 
         await self._start_typing(chat_id)
         try:
-            # Forward to message bus
-            await self._handle_message(
+            await self._publish_inbound_message(
                 sender_id=sender_id,
                 chat_id=chat_id,
                 content=content,
@@ -592,9 +591,7 @@ class SignalChannel(BaseChannel):
                     "sender_name": sender_name,
                     "sender_number": sender_number,
                     "is_group": is_group_message,
-                    "group_id": (
-                        group_id
-                    ),
+                    "group_id": group_id,
                 },
             )
         except Exception:
