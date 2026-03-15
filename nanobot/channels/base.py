@@ -116,6 +116,25 @@ class BaseChannel(ABC):
             )
             return
 
+        await self._publish_inbound_message(
+            sender_id=sender_id,
+            chat_id=chat_id,
+            content=content,
+            media=media,
+            metadata=metadata,
+            session_key=session_key,
+        )
+
+    async def _publish_inbound_message(
+        self,
+        sender_id: str,
+        chat_id: str,
+        content: str,
+        media: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        session_key: str | None = None,
+    ) -> None:
+        """Publish an inbound message after channel-specific access checks have passed."""
         msg = InboundMessage(
             channel=self.name,
             sender_id=str(sender_id),
