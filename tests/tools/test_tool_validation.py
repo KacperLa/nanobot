@@ -565,6 +565,20 @@ async def test_exec_head_tail_truncation() -> None:
     assert "Exit code:" in result
 
 
+async def test_exec_respects_max_output_chars_override() -> None:
+    """Caller-supplied max_output_chars should override the default truncation limit."""
+    tool = ExecTool()
+    command = "python3 -c \"print('A' * 12000)\""
+
+    truncated = await tool.execute(command=command)
+    assert "chars truncated" in truncated
+
+    full = await tool.execute(command=command, max_output_chars=20000)
+    assert "chars truncated" not in full
+    assert "Exit code: 0" in full
+    assert "A" * 12000 in full
+
+
 async def test_exec_timeout_parameter() -> None:
     """LLM-supplied timeout should override the constructor default."""
     tool = ExecTool(timeout=60)
