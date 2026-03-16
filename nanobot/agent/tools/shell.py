@@ -44,6 +44,7 @@ class ExecTool(Tool):
 
     _MAX_TIMEOUT = 600
     _MAX_OUTPUT = 10_000
+    _MAX_OUTPUT_HARD_LIMIT = 500_000
 
     @property
     def description(self) -> str:
@@ -71,13 +72,22 @@ class ExecTool(Tool):
                     "minimum": 1,
                     "maximum": 600,
                 },
+                "max_output_chars": {
+                    "type": "integer",
+                    "description": (
+                        "Maximum number of output characters to return before truncation "
+                        f"(default {self._MAX_OUTPUT}, max {self._MAX_OUTPUT_HARD_LIMIT})."
+                    ),
+                    "minimum": 1,
+                    "maximum": self._MAX_OUTPUT_HARD_LIMIT,
+                },
             },
             "required": ["command"],
         }
 
     async def execute(
         self, command: str, working_dir: str | None = None,
-        timeout: int | None = None, **kwargs: Any,
+        timeout: int | None = None, max_output_chars: int | None = None, **kwargs: Any,
     ) -> str:
         cwd = working_dir or self.working_dir or os.getcwd()
         guard_error = self._guard_command(command, cwd)
@@ -85,6 +95,9 @@ class ExecTool(Tool):
             return guard_error
 
         effective_timeout = min(timeout or self.timeout, self._MAX_TIMEOUT)
+        effective_max_output = self._MAX_OUTPUT
+        if isinstance(max_output_chars, int) and max_output_chars > 0:
+            effective_max_output = min(max_output_chars, self._MAX_OUTPUT_HARD_LIMIT)
 
         env = os.environ.copy()
         if self.path_append:
@@ -127,7 +140,7 @@ class ExecTool(Tool):
             result = "\n".join(output_parts) if output_parts else "(no output)"
 
             # Head + tail truncation to preserve both start and end of output
-            max_len = self._MAX_OUTPUT
+            max_len = effective_max_output
             if len(result) > max_len:
                 half = max_len // 2
                 result = (

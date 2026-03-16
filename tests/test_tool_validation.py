@@ -382,13 +382,27 @@ async def test_exec_head_tail_truncation() -> None:
     # Generate output that exceeds _MAX_OUTPUT (10_000 chars)
     # Use python to generate output to avoid command line length limits
     result = await tool.execute(
-        command="python -c \"print('A' * 6000 + '\\n' + 'B' * 6000)\""
+        command="python3 -c \"print('A' * 6000 + '\\n' + 'B' * 6000)\""
     )
     assert "chars truncated" in result
     # Head portion should start with As
     assert result.startswith("A")
     # Tail portion should end with the exit code which comes after Bs
     assert "Exit code:" in result
+
+
+async def test_exec_respects_max_output_chars_override() -> None:
+    """Caller-supplied max_output_chars should override the default truncation limit."""
+    tool = ExecTool()
+    command = "python3 -c \"print('A' * 12000)\""
+
+    truncated = await tool.execute(command=command)
+    assert "chars truncated" in truncated
+
+    full = await tool.execute(command=command, max_output_chars=20000)
+    assert "chars truncated" not in full
+    assert "Exit code: 0" in full
+    assert "A" * 12000 in full
 
 
 async def test_exec_timeout_parameter() -> None:
