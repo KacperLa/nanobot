@@ -12,11 +12,16 @@ from nanobot.agent.hook import AgentHook, AgentHookContext
 from nanobot.utils.prompt_templates import render_template
 from nanobot.agent.runner import AgentRunSpec, AgentRunner
 from nanobot.agent.skills import BUILTIN_SKILLS_DIR
+from nanobot.agent.tools.card_board import CardBoardTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
+from nanobot.agent.tools.inbox_board import InboxBoardTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.search import GlobTool, GrepTool
 from nanobot.agent.tools.shell import ExecTool
+from nanobot.agent.tools.task_board import TaskBoardTool
+from nanobot.agent.tools.task_helper_card import TaskHelperCardTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+from nanobot.agent.tools.workbench_board import WorkbenchBoardTool
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import ExecToolConfig, WebToolsConfig
@@ -119,6 +124,11 @@ class SubagentManager:
             tools.register(ListDirTool(workspace=self.workspace, allowed_dir=allowed_dir))
             tools.register(GlobTool(workspace=self.workspace, allowed_dir=allowed_dir))
             tools.register(GrepTool(workspace=self.workspace, allowed_dir=allowed_dir))
+            tools.register(InboxBoardTool(workspace=self.workspace))
+            tools.register(TaskBoardTool(workspace=self.workspace))
+            tools.register(TaskHelperCardTool(workspace=self.workspace))
+            tools.register(WorkbenchBoardTool(workspace=self.workspace))
+            tools.register(CardBoardTool())
             if self.exec_config.enable:
                 tools.register(ExecTool(
                     working_dir=str(self.workspace),
@@ -241,6 +251,13 @@ class SubagentManager:
             time_ctx=time_ctx,
             workspace=str(self.workspace),
             skills_summary=skills_summary or "",
+        ) + (
+            "\n\n## Life OS Tools\n"
+            "- Use `inbox_board` for vague capture, reminders for later, and ambiguous items.\n"
+            "- Use `task_board` for explicit actionable tasks and tag management.\n"
+            "- Use `task_helper_card` to prepare useful helper artifacts for actionable tasks.\n"
+            "- Use `workbench_board` for temporary session-scoped artifacts that belong on the chat-side workbench.\n"
+            "- Use `card_board` for attached UI cards when runtime metadata already includes a card ID."
         )
 
     async def cancel_by_session(self, session_key: str) -> int:

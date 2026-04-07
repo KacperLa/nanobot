@@ -11,6 +11,7 @@ from nanobot.agent.tools.mcp import (
     MCPResourceWrapper,
     MCPPromptWrapper,
     MCPToolWrapper,
+    _validate_stdio_server_config,
     connect_mcp_servers,
 )
 from nanobot.agent.tools.registry import ToolRegistry
@@ -630,3 +631,14 @@ async def test_connect_registers_resources_and_prompts(
     assert "mcp_test_tool_a" in registry.tool_names
     assert "mcp_test_resource_res_b" in registry.tool_names
     assert "mcp_test_prompt_prompt_c" in registry.tool_names
+
+
+def test_validate_stdio_server_config_rejects_missing_script(tmp_path) -> None:
+    cfg = MCPServerConfig(
+        command="/usr/bin/python3",
+        args=[str(tmp_path / "missing.py")],
+    )
+
+    reason = _validate_stdio_server_config("broken", cfg)
+
+    assert reason == f"script path does not exist: {tmp_path / 'missing.py'}"

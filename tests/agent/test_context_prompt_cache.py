@@ -32,6 +32,25 @@ def test_bootstrap_files_are_backed_by_templates() -> None:
         assert (template_dir / filename).is_file(), f"missing bootstrap template: {filename}"
 
 
+def test_bootstrap_templates_cover_current_feed_guidance() -> None:
+    template_dir = pkg_files("nanobot") / "templates"
+    agents = (template_dir / "AGENTS.md").read_text(encoding="utf-8")
+    tools = (template_dir / "TOOLS.md").read_text(encoding="utf-8")
+
+    for needle in [
+        "inbox_board",
+        "task_board",
+        "task_helper_card",
+        "workbench_board",
+        "card_board",
+    ]:
+        assert needle in tools
+
+    assert "task_helper_card" in agents
+    assert "workbench_board" in agents
+    assert "card_board" in agents
+
+
 def test_system_prompt_stays_stable_when_clock_changes(tmp_path, monkeypatch) -> None:
     """System prompt should not change just because wall clock minute changes."""
     monkeypatch.setattr(datetime_module, "datetime", _FakeDatetime)

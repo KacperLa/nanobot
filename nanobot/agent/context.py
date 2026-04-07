@@ -1,6 +1,7 @@
 """Context builder for assembling agent prompts."""
 
 import base64
+import json
 import mimetypes
 import platform
 from pathlib import Path
@@ -72,6 +73,98 @@ class ContextBuilder:
         )
 
     @staticmethod
+    def _truncate_runtime_value(value: str, limit: int = 4000) -> str:
+        text = value.strip()
+        if len(text) <= limit:
+            return text
+        return text[:limit].rstrip() + "\n... (truncated)"
+
+    @classmethod
+    def _build_card_metadata_context(cls, metadata: dict[str, Any]) -> str:
+        lines: list[str] = []
+
+        context_label = str(metadata.get("context_label", "")).strip()
+        card_id = str(metadata.get("card_id", "")).strip()
+        card_slot = str(metadata.get("card_slot", "")).strip()
+        card_lane = str(metadata.get("card_lane", "")).strip()
+        card_title = str(metadata.get("card_title", "")).strip()
+        card_template = str(metadata.get("card_template_key", "")).strip()
+        card_summary = str(metadata.get("card_context_summary", "")).strip()
+        card_response_value = str(metadata.get("card_response_value", "")).strip()
+        selection_label = str(metadata.get("card_selection_label", "")).strip()
+
+        if not any(
+            [
+                context_label,
+                card_id,
+                card_slot,
+                card_lane,
+                card_title,
+                card_template,
+                card_summary,
+                card_response_value,
+                selection_label,
+                metadata.get("card_selection"),
+                metadata.get("card_live_content"),
+            ]
+        ):
+            return ""
+
+        lines.append("Attached Context:")
+        if context_label:
+            lines.append(f"- Label: {context_label}")
+        if card_id:
+            lines.append(f"- Card ID: {card_id}")
+        if card_slot:
+            lines.append(f"- Card Slot: {card_slot}")
+        if card_lane:
+            lines.append(f"- Card Lane: {card_lane}")
+        if card_title:
+            lines.append(f"- Title: {card_title}")
+        if card_template:
+            lines.append(f"- Template: {card_template}")
+        if card_summary:
+            lines.append(f"- Summary: {card_summary}")
+        if card_response_value:
+            lines.append(f"- Current Response: {card_response_value}")
+        if selection_label:
+            lines.append(f"- Selection: {selection_label}")
+
+        card_selection = metadata.get("card_selection")
+        if card_selection is not None:
+            try:
+                selection_text = json.dumps(card_selection, ensure_ascii=False, indent=2)
+            except TypeError:
+                selection_text = str(card_selection)
+            lines.append("Attached Selection JSON:")
+            lines.append(cls._truncate_runtime_value(selection_text))
+
+        card_live_content = metadata.get("card_live_content")
+        if card_live_content is not None:
+            serialized_live_content = card_live_content
+            if isinstance(card_live_content, dict):
+                ui_score = card_live_content.get("score")
+                if isinstance(ui_score, (int, float)):
+                    lines.append(
+                        "- Feed Relevance Score: "
+                        f"{ui_score} (UI ordering only, not card domain data)"
+                    )
+                serialized_live_content = {
+                    key: value for key, value in card_live_content.items() if key != "score"
+                }
+            try:
+                live_content_text = json.dumps(
+                    serialized_live_content, ensure_ascii=False, indent=2
+                )
+            except TypeError:
+                live_content_text = str(serialized_live_content)
+            if str(live_content_text).strip() not in {"{}", ""}:
+                lines.append("Attached Live Content JSON:")
+                lines.append(cls._truncate_runtime_value(live_content_text))
+
+        return "\n".join(lines)
+
+    @staticmethod
     def _build_runtime_context(
         channel: str | None,
         chat_id: str | None,
@@ -86,6 +179,11 @@ class ContextBuilder:
             sender_name = metadata.get("sender_name")
             if sender_name:
                 lines.append(f"User: {sender_name}")
+        if metadata:
+            card_context = ContextBuilder._build_card_metadata_context(metadata)
+            if card_context:
+                lines.append("")
+                lines.append(card_context)
         return ContextBuilder._RUNTIME_CONTEXT_TAG + "\n" + "\n".join(lines)
 
     @staticmethod

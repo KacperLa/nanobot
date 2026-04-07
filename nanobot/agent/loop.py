@@ -18,13 +18,18 @@ from nanobot.agent.memory import Consolidator, Dream
 from nanobot.agent.runner import AgentRunSpec, AgentRunner
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
+from nanobot.agent.tools.card_board import CardBoardTool
 from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
+from nanobot.agent.tools.inbox_board import InboxBoardTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.search import GlobTool, GrepTool
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.spawn import SpawnTool
+from nanobot.agent.tools.task_board import TaskBoardTool
+from nanobot.agent.tools.task_helper_card import TaskHelperCardTool
+from nanobot.agent.tools.workbench_board import WorkbenchBoardTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.command import CommandContext, CommandRouter, register_builtin_commands
@@ -268,6 +273,11 @@ class AgentLoop:
             self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
         for cls in (GlobTool, GrepTool):
             self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
+        self.tools.register(InboxBoardTool(workspace=self.workspace))
+        self.tools.register(CardBoardTool())
+        self.tools.register(TaskBoardTool(workspace=self.workspace))
+        self.tools.register(TaskHelperCardTool(workspace=self.workspace))
+        self.tools.register(WorkbenchBoardTool(workspace=self.workspace))
         if self.exec_config.enable:
             self.tools.register(ExecTool(
                 working_dir=str(self.workspace),

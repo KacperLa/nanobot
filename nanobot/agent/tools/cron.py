@@ -90,8 +90,11 @@ class CronTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Schedule reminders and recurring tasks. Actions: add, list, remove. "
-            f"If tz is omitted, cron expressions and naive ISO times default to {self._default_timezone}."
+            "Schedule explicit timed reminders and recurring jobs. "
+            "Use this only when the user provides a specific time/date or clearly asks for recurrence. "
+            "Do not use cron for unscheduled task capture or generic 'remember this' requests. "
+            f"If tz is omitted, cron expressions and naive ISO times default to {self._default_timezone}. "
+            "Actions: add, list, remove."
         )
 
     async def execute(

@@ -1,49 +1,30 @@
 # User Profile
 
-Information about the user to help personalize interactions.
+Use this file to record stable user preferences that should shape Nanobot's behavior.
+Only include information that is actually known. Delete placeholder sections instead of leaving fake defaults.
 
 ## Basic Information
 
-- **Name**: (your name)
-- **Timezone**: (your timezone, e.g., UTC+8)
-- **Language**: (preferred language)
+- Name:
+- Timezone:
+- Language:
 
 ## Preferences
 
-### Communication Style
-
-- [ ] Casual
-- [ ] Professional
-- [ ] Technical
-
-### Response Length
-
-- [ ] Brief and concise
-- [ ] Detailed explanations
-- [ ] Adaptive based on question
-
-### Technical Level
-
-- [ ] Beginner
-- [ ] Intermediate
-- [ ] Expert
+- Communication style:
+- Response length:
+- Technical level:
 
 ## Work Context
 
-- **Primary Role**: (your role, e.g., developer, researcher)
-- **Main Projects**: (what you're working on)
-- **Tools You Use**: (IDEs, languages, frameworks)
+- Primary role:
+- Main projects:
+- Tools and environments:
 
 ## Topics of Interest
 
 - 
-- 
-- 
 
 ## Special Instructions
 
-(Any specific instructions for how the assistant should behave)
-
----
-
-*Edit this file to customize nanobot's behavior for your needs.*
+- 

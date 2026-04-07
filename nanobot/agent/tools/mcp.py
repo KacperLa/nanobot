@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import AsyncExitStack
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -306,6 +307,21 @@ class MCPPromptWrapper(Tool):
         return "\n".join(parts) or "(no output)"
 
 
+def _validate_stdio_server_config(server_name: str, cfg: Any) -> str | None:
+    """Return a skip reason when a stdio MCP server points at a missing local file."""
+    command = str(getattr(cfg, "command", "") or "").strip()
+    if command.startswith("/") and not Path(command).exists():
+        return f"command path does not exist: {command}"
+
+    args = list(getattr(cfg, "args", []) or [])
+    if args:
+        first_arg = str(args[0] or "").strip()
+        if first_arg.startswith("/") and not Path(first_arg).exists():
+            return f"script path does not exist: {first_arg}"
+
+    return None
+
+
 async def connect_mcp_servers(
     mcp_servers: dict, registry: ToolRegistry, stack: AsyncExitStack
 ) -> None:
@@ -331,6 +347,10 @@ async def connect_mcp_servers(
                     continue
 
             if transport_type == "stdio":
+                skip_reason = _validate_stdio_server_config(name, cfg)
+                if skip_reason:
+                    logger.warning("MCP server '{}': {}, skipping", name, skip_reason)
+                    continue
                 params = StdioServerParameters(
                     command=cfg.command, args=cfg.args, env=cfg.env or None
                 )
