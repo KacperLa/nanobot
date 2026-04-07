@@ -691,11 +691,40 @@ class AgentLoop:
                 channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
             ))
 
+        async def _bus_assistant_delta(content: str) -> None:
+            if msg.channel != "api" or not content.strip():
+                return
+            meta = dict(msg.metadata or {})
+            meta["_progress"] = True
+            meta["_assistant_partial"] = True
+            meta["_nanobot_progress"] = True
+            await self.bus.publish_outbound(OutboundMessage(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content=content,
+                metadata=meta,
+            ))
+
+        combined_on_stream = on_stream
+        combined_on_stream_end = on_stream_end
+        if msg.channel == "api":
+            async def _combined_on_stream(content: str) -> None:
+                if on_stream is not None:
+                    await on_stream(content)
+                await _bus_assistant_delta(content)
+
+            async def _combined_on_stream_end(*, resuming: bool = False) -> None:
+                if on_stream_end is not None:
+                    await on_stream_end(resuming=resuming)
+
+            combined_on_stream = _combined_on_stream
+            combined_on_stream_end = _combined_on_stream_end
+
         final_content, _, all_msgs = await self._run_agent_loop(
             initial_messages,
             on_progress=on_progress or _bus_progress,
-            on_stream=on_stream,
-            on_stream_end=on_stream_end,
+            on_stream=combined_on_stream,
+            on_stream_end=combined_on_stream_end,
             session=session,
             channel=msg.channel, chat_id=msg.chat_id,
             message_id=msg.metadata.get("message_id"),

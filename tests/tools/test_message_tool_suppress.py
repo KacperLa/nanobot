@@ -115,6 +115,34 @@ class TestMessageToolSuppressLogic:
             ('read foo.txt', True),
         ]
 
+    @pytest.mark.asyncio
+    async def test_api_channel_publishes_assistant_partials(self, tmp_path: Path) -> None:
+        loop = _make_loop(tmp_path)
+        loop.tools.get_definitions = MagicMock(return_value=[])
+
+        async def _fake_chat_stream_with_retry(*_args, on_content_delta=None, **_kwargs):
+            assert on_content_delta is not None
+            await on_content_delta("Hel")
+            await on_content_delta("lo")
+            return LLMResponse(content="Hello", tool_calls=[])
+
+        loop.provider.chat_stream_with_retry = AsyncMock(side_effect=_fake_chat_stream_with_retry)
+
+        msg = InboundMessage(channel="api", sender_id="user1", chat_id="web", content="Hi")
+        result = await loop._process_message(msg)
+
+        partial_1 = await loop.bus.consume_outbound()
+        partial_2 = await loop.bus.consume_outbound()
+
+        assert result is not None
+        assert result.content == "Hello"
+        assert partial_1.content == "Hel"
+        assert partial_2.content == "lo"
+        assert partial_1.metadata["_assistant_partial"] is True
+        assert partial_2.metadata["_assistant_partial"] is True
+        assert partial_1.metadata["_progress"] is True
+        assert partial_2.metadata["_progress"] is True
+
 
 class TestMessageToolTurnTracking:
 

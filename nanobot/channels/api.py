@@ -311,6 +311,7 @@ class ApiChannel(BaseChannel):
             "chat_id": msg.chat_id,
             "is_progress": bool(msg.metadata.get("_progress")),
             "is_tool_hint": bool(msg.metadata.get("_tool_hint")),
+            "is_partial": bool(msg.metadata.get("_assistant_partial")),
         }
         targets = self._target_clients(msg.chat_id)
         await asyncio.gather(
