@@ -8,6 +8,7 @@ def test_subagent_prompt_includes_current_feed_guidance(tmp_path) -> None:
         provider=MagicMock(),
         workspace=tmp_path,
         bus=MagicMock(),
+        max_tool_result_chars=4000,
     )
 
     prompt = mgr._build_subagent_prompt()
@@ -17,4 +18,4 @@ def test_subagent_prompt_includes_current_feed_guidance(tmp_path) -> None:
     assert "task_helper_card" in prompt
     assert "workbench_board" in prompt
     assert "card_board" in prompt
-    assert "do not ask the user to find the card ID again" in prompt
+    assert "runtime metadata already includes a card ID" in prompt
