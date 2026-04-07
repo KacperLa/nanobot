@@ -1,6 +1,8 @@
 import pytest
+import json
 
 from nanobot.agent.loop import AgentLoop
+from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.api import ApiChannel, _ClientConnection
 from nanobot.config.schema import ApiChannelConfig
@@ -117,4 +119,32 @@ def test_resolve_api_exposed_tools_supports_mcp_server_scope() -> None:
         "exec",
         "mcp_home assistant_GetLiveContext",
         "mcp_home assistant_HassTurnOn",
+    }
+
+
+@pytest.mark.asyncio
+async def test_send_marks_assistant_partial_messages() -> None:
+    bus = MessageBus()
+    channel = ApiChannel(ApiChannelConfig(enabled=True), bus)
+    conn = _make_connection(channel)
+    conn.chat_id = "web"
+    channel._clients[id(conn)] = conn
+
+    await channel.send(
+        OutboundMessage(
+            channel="api",
+            chat_id="web",
+            content="Hel",
+            metadata={"_progress": True, "_assistant_partial": True},
+        )
+    )
+
+    payload = json.loads(conn._writer.writes[0].decode())
+    assert payload["method"] == "message"
+    assert payload["params"] == {
+        "content": "Hel",
+        "chat_id": "web",
+        "is_progress": True,
+        "is_tool_hint": False,
+        "is_partial": True,
     }

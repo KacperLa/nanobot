@@ -1428,6 +1428,34 @@ class AgentLoop:
             hook_factories=list(hook_factories or []),
             tools=tools,
         )
+        if msg.channel == "api":
+            api_stream_callback = ctx.on_stream
+            api_stream_end_callback = ctx.on_stream_end
+
+            async def _api_assistant_delta(content: str) -> None:
+                if api_stream_callback is not None:
+                    await api_stream_callback(content)
+                if not content.strip():
+                    return
+                meta = dict(msg.metadata or {})
+                meta["_progress"] = True
+                meta["_assistant_partial"] = True
+                meta["_nanobot_progress"] = True
+                await self.bus.publish_outbound(
+                    OutboundMessage(
+                        channel=ctx.delivery.route.channel,
+                        chat_id=ctx.delivery.route.chat_id,
+                        content=content,
+                        metadata=meta,
+                    )
+                )
+
+            async def _api_stream_end(*, resuming: bool = False) -> None:
+                if api_stream_end_callback is not None:
+                    await api_stream_end_callback(resuming=resuming)
+
+            ctx.on_stream = _api_assistant_delta
+            ctx.on_stream_end = _api_stream_end
         # A streaming callback may be present even when the final text comes from a
         # non-streaming recovery. Only the last completed segment can suppress the
         # regular outbound message.
