@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import os
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -54,6 +55,7 @@ _MAX_EMPTY_RETRIES = 2
 _MAX_LENGTH_RECOVERIES = 3
 _MAX_INJECTIONS_PER_TURN = 3
 _MAX_INJECTION_CYCLES = 5
+_MAX_REPEATED_TOOL_FAILURES = 3
 
 @dataclass(slots=True)
 class AgentRunSpec:
@@ -333,6 +335,8 @@ class AgentRunner:
         external_lookup_counts: dict[str, int] = {}
         # Per-turn throttle for repeated attempts against the same outside target.
         workspace_violation_counts: dict[str, int] = {}
+        last_tool_error_signature: str | None = None
+        repeated_tool_error_count = 0
         empty_content_retries = 0
         length_recovery_count = 0
         had_injections = False
@@ -428,6 +432,28 @@ class AgentRunner:
                 )
                 context.tool_results = list(results)
                 context.tool_events = list(new_events)
+                repeated_tool_error_message: str | None = None
+                if fatal_error is None:
+                    tool_error_signature = self._tool_error_signature(
+                        response.tool_calls,
+                        results,
+                        new_events,
+                    )
+                    if tool_error_signature is None:
+                        last_tool_error_signature = None
+                        repeated_tool_error_count = 0
+                    elif tool_error_signature == last_tool_error_signature:
+                        repeated_tool_error_count += 1
+                    else:
+                        last_tool_error_signature = tool_error_signature
+                        repeated_tool_error_count = 1
+
+                    if repeated_tool_error_count >= _MAX_REPEATED_TOOL_FAILURES:
+                        repeated_tool_error_message = self._repeated_tool_error_message(
+                            response.tool_calls,
+                            new_events,
+                            repeated_tool_error_count,
+                        )
                 completed_tool_results: list[dict[str, Any]] = []
                 for tool_call, result in zip(response.tool_calls, results):
                     tool_message = {
@@ -459,6 +485,21 @@ class AgentRunner:
                     if should_continue:
                         had_injections = True
                         continue
+                    break
+                if repeated_tool_error_message is not None:
+                    logger.warning(
+                        "Stopping {} after {} repeated identical tool failures",
+                        spec.session_key or "default",
+                        repeated_tool_error_count,
+                    )
+                    error = repeated_tool_error_message
+                    final_content = repeated_tool_error_message
+                    stop_reason = "tool_error"
+                    self._append_final_message(messages, final_content)
+                    context.final_content = final_content
+                    context.error = error
+                    context.stop_reason = stop_reason
+                    await hook.after_iteration(context)
                     break
                 await self._emit_checkpoint(
                     spec,
@@ -1285,6 +1326,70 @@ class AgentRunner:
             return False
         lowered = text.lower()
         return any(marker in lowered for marker in cls._SSRF_MARKERS)
+
+    @classmethod
+    def _tool_error_signature(
+        cls,
+        tool_calls: list[ToolCallRequest],
+        results: list[Any],
+        events: list[dict[str, str]],
+    ) -> str | None:
+        error_entries: list[dict[str, str]] = []
+        for tool_call, result, event in zip(tool_calls, results, events):
+            if event.get("status") != "error":
+                continue
+            error_entries.append({
+                "name": tool_call.name,
+                "arguments": cls._stable_json(tool_call.arguments),
+                "detail": str(event.get("detail") or ""),
+                "result": cls._compact_text(result, limit=500),
+            })
+        if not error_entries:
+            return None
+        return json.dumps(error_entries, sort_keys=True, separators=(",", ":"))
+
+    @classmethod
+    def _repeated_tool_error_message(
+        cls,
+        tool_calls: list[ToolCallRequest],
+        events: list[dict[str, str]],
+        count: int,
+    ) -> str:
+        index = next(
+            (idx for idx, event in enumerate(events) if event.get("status") == "error"),
+            0,
+        )
+        tool_call = tool_calls[index] if index < len(tool_calls) else None
+        event = events[index] if index < len(events) else {}
+        if tool_call is None:
+            return (
+                f"I stopped because the same tool call failed {count} times in a row. "
+                "That usually means the tool target or arguments need to be corrected."
+            )
+        args = cls._compact_text(cls._stable_json(tool_call.arguments), limit=300)
+        detail = cls._compact_text(event.get("detail") or "unknown tool error", limit=300)
+        return (
+            f"I stopped because the same tool call failed {count} times in a row. "
+            "That usually means the tool target or arguments need to be corrected.\n\n"
+            f"Tool: {tool_call.name}\n"
+            f"Arguments: {args}\n"
+            f"Last error: {detail}"
+        )
+
+    @staticmethod
+    def _stable_json(value: Any) -> str:
+        try:
+            return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+        except TypeError:
+            return str(value)
+
+    @staticmethod
+    def _compact_text(value: Any, *, limit: int) -> str:
+        text = "" if value is None else str(value)
+        text = " ".join(text.split())
+        if len(text) > limit:
+            return text[: limit - 3] + "..."
+        return text
 
     @classmethod
     def _is_workspace_violation(cls, text: str) -> bool:

@@ -18,6 +18,7 @@ from nanobot.agent.tools.mcp import (
     _normalize_windows_stdio_command,
     _sanitize_mcp_tool_name,
     _sanitize_name,
+    _validate_stdio_server_config,
     connect_mcp_servers,
 )
 from nanobot.agent.tools.registry import ToolRegistry, is_tool_error_result
@@ -1542,3 +1543,14 @@ def test_long_server_name_tools_are_matched_by_server_name() -> None:
     assert removed == 1
     assert wrapper.name not in registry.tool_names
     assert other_wrapper.name in registry.tool_names
+
+
+def test_validate_stdio_server_config_rejects_missing_script(tmp_path: Path) -> None:
+    cfg = MCPServerConfig(
+        command="/usr/bin/python3",
+        args=[str(tmp_path / "missing.py")],
+    )
+
+    reason = _validate_stdio_server_config("broken", cfg)
+
+    assert reason == f"script path does not exist: {tmp_path / 'missing.py'}"

@@ -492,3 +492,63 @@ async def test_runner_blocks_repeated_external_fetches():
         if msg.get("role") == "tool" and msg.get("tool_call_id") == "call_3"
     ][0]
     assert "repeated external lookup blocked" in blocked_tool_message["content"]
+
+
+@pytest.mark.asyncio
+async def test_runner_stops_repeated_identical_tool_failures():
+    class FailingTool(Tool):
+        @property
+        def name(self) -> str:
+            return "mcp_home_assistant_HassListAddItem"
+
+        @property
+        def description(self) -> str:
+            return "failing test tool"
+
+        @property
+        def parameters(self) -> dict:
+            return {"type": "object", "properties": {}}
+
+        async def execute(self, **kwargs):
+            return ToolResult.error(
+                "Error calling tool: MatchFailedError: no todo list matched Kacper's To-Do"
+            )
+
+    provider = MagicMock()
+    call_count = {"n": 0}
+
+    async def chat_with_retry(*, messages, **kwargs):
+        call_count["n"] += 1
+        return LLMResponse(
+            content="working",
+            tool_calls=[
+                ToolCallRequest(
+                    id=f"call_{call_count['n']}",
+                    name="mcp_home_assistant_HassListAddItem",
+                    arguments={
+                        "item": "Rip Akita Battle Angle",
+                        "name": "Kacper's To-Do",
+                    },
+                )
+            ],
+            usage={},
+        )
+
+    provider.chat_with_retry = chat_with_retry
+    tools = ToolRegistry()
+    tools.register(FailingTool())
+
+    result = await AgentRunner().run(make_run_spec(provider,
+        initial_messages=[{"role": "user", "content": "add todo"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=10,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+    ))
+
+    assert result.stop_reason == "tool_error"
+    assert call_count["n"] == 3
+    assert "same tool call failed 3 times" in (result.final_content or "")
+    assert "mcp_home_assistant_HassListAddItem" in (result.final_content or "")
+    assert result.messages[-2]["role"] == "tool"
+    assert result.messages[-1]["role"] == "assistant"

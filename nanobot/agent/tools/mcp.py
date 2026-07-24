@@ -9,6 +9,7 @@ import shutil
 import urllib.parse
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack, suppress
+from pathlib import Path
 from typing import Any, Mapping, Protocol
 from weakref import WeakKeyDictionary
 
@@ -45,6 +46,21 @@ _TRANSIENT_EXC_NAMES: frozenset[str] = frozenset((
     "ConnectionAbortedError",
     "ConnectionError",
 ))
+
+
+def _validate_stdio_server_config(server_name: str, cfg: Any) -> str | None:
+    """Return a skip reason when a stdio MCP server points at a missing local file."""
+    command = str(getattr(cfg, "command", "") or "").strip()
+    if command.startswith("/") and not Path(command).exists():
+        return f"command path does not exist: {command}"
+
+    args = list(getattr(cfg, "args", []) or [])
+    if args:
+        first_arg = str(args[0] or "").strip()
+        if first_arg.startswith("/") and not Path(first_arg).exists():
+            return f"script path does not exist: {first_arg}"
+
+    return None
 
 _WINDOWS_SHELL_LAUNCHERS: frozenset[str] = frozenset(("npx", "npm", "pnpm", "yarn", "bunx"))
 
@@ -875,6 +891,11 @@ async def connect_mcp_servers(
                     return name, None
 
             if transport_type == "stdio":
+                skip_reason = _validate_stdio_server_config(name, cfg)
+                if skip_reason:
+                    logger.warning("MCP server '{}': {}, skipping", name, skip_reason)
+                    await server_stack.aclose()
+                    return name, None
                 command, args, env = _normalize_windows_stdio_command(
                     cfg.command,
                     cfg.args,
