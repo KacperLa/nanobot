@@ -23,6 +23,7 @@ from nanobot.runtime_context import (
 from nanobot.utils.helpers import (
     detect_image_mime,
     load_bundled_template,
+    prepare_image_for_llm,
     truncate_text_to_tokens,
 )
 from nanobot.utils.prompt_templates import render_template
@@ -259,11 +260,12 @@ class ContextBuilder:
             mime = detect_image_mime(raw) or mimetypes.guess_type(path)[0]
             if not mime or not mime.startswith("image/"):
                 continue
-            b64 = base64.b64encode(raw).decode()
+            prepared = prepare_image_for_llm(raw, mime, path=str(p))
+            b64 = base64.b64encode(prepared.raw).decode()
             images.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:{mime};base64,{b64}"},
-                "_meta": {"path": str(p)},
+                "image_url": {"url": f"data:{prepared.mime};base64,{b64}"},
+                "_meta": prepared.meta(str(p)),
             })
 
         if not images:

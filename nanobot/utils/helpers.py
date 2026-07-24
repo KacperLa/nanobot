@@ -2,6 +2,7 @@
 
 import base64
 import json
+import math
 import os
 import re
 import shutil
@@ -9,8 +10,10 @@ import stat
 import time
 import uuid
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -311,18 +314,197 @@ def detect_image_mime(data: bytes) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class PreparedImage:
+    """Image bytes normalized for model ingestion."""
+
+    raw: bytes
+    mime: str
+    resized: bool = False
+    original_size_bytes: int = 0
+    original_width: int | None = None
+    original_height: int | None = None
+    width: int | None = None
+    height: int | None = None
+
+    @property
+    def base64_size_bytes(self) -> int:
+        return _base64_size(len(self.raw))
+
+    def meta(self, path: str) -> dict[str, Any]:
+        metadata: dict[str, Any] = {"path": path}
+        if self.resized:
+            metadata.update({
+                "resized": True,
+                "original_size_bytes": self.original_size_bytes,
+                "size_bytes": len(self.raw),
+                "base64_size_bytes": self.base64_size_bytes,
+                "original_width": self.original_width,
+                "original_height": self.original_height,
+                "width": self.width,
+                "height": self.height,
+            })
+        return metadata
+
+    def label_suffix(self) -> str:
+        if not self.resized:
+            return ""
+        if self.original_width and self.original_height and self.width and self.height:
+            return (
+                " (resized for model input from "
+                f"{self.original_width}x{self.original_height} to {self.width}x{self.height})"
+            )
+        return " (resized for model input)"
+
+
+def _base64_size(raw_size_bytes: int) -> int:
+    return ((raw_size_bytes + 2) // 3) * 4
+
+
+def _image_limit(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _jpeg_bytes(image: Any, quality: int) -> bytes:
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG", quality=quality, optimize=True)
+    return buffer.getvalue()
+
+
+def _jpeg_safe_image(image: Any) -> Any:
+    from PIL import Image
+
+    if image.mode in {"RGBA", "LA"} or "transparency" in getattr(image, "info", {}):
+        rgba = image.convert("RGBA")
+        background = Image.new("RGB", rgba.size, "white")
+        background.paste(rgba, mask=rgba.getchannel("A"))
+        return background
+    if image.mode != "RGB":
+        return image.convert("RGB")
+    return image
+
+
+def prepare_image_for_llm(
+    raw: bytes,
+    mime: str,
+    *,
+    path: str = "",
+    max_base64_bytes: int | None = None,
+    max_edge: int | None = None,
+    max_pixels: int | None = None,
+) -> PreparedImage:
+    """Resize and recompress images before embedding them in LLM requests."""
+    base64_cap = max_base64_bytes or _image_limit(
+        "NANOBOT_IMAGE_MAX_BASE64_BYTES",
+        8 * 1024 * 1024,
+    )
+    edge_cap = max_edge or _image_limit("NANOBOT_IMAGE_MAX_EDGE", 1600)
+    pixel_cap = max_pixels or _image_limit(
+        "NANOBOT_IMAGE_MAX_PIXELS",
+        2500 * 32 * 32,
+    )
+    original_size = len(raw)
+
+    try:
+        from PIL import Image, ImageOps, UnidentifiedImageError
+    except ImportError:
+        if _base64_size(original_size) > base64_cap:
+            logger.warning(
+                "Pillow is not installed; image {} exceeds configured base64 cap",
+                path or "(unknown)",
+            )
+        return PreparedImage(raw=raw, mime=mime, original_size_bytes=original_size)
+
+    try:
+        with Image.open(BytesIO(raw)) as opened:
+            image = ImageOps.exif_transpose(opened)
+            image.load()
+    except UnidentifiedImageError:
+        return PreparedImage(raw=raw, mime=mime, original_size_bytes=original_size)
+    except Exception as exc:
+        logger.warning("Failed to inspect image {}: {}", path or "(unknown)", exc)
+        return PreparedImage(raw=raw, mime=mime, original_size_bytes=original_size)
+
+    original_width, original_height = image.size
+    scale = 1.0
+    longest_edge = max(original_width, original_height)
+    if longest_edge > edge_cap:
+        scale = min(scale, edge_cap / longest_edge)
+    pixels = original_width * original_height
+    if pixels > pixel_cap:
+        scale = min(scale, math.sqrt(pixel_cap / pixels))
+
+    resized = False
+    if scale < 1.0:
+        width = max(1, int(original_width * scale))
+        height = max(1, int(original_height * scale))
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
+        resized = True
+
+    candidate = raw
+    candidate_mime = mime
+    candidate_width, candidate_height = image.size
+    needs_reencode = resized or _base64_size(len(raw)) > base64_cap
+    if needs_reencode:
+        jpeg_image = _jpeg_safe_image(image)
+        candidate_mime = "image/jpeg"
+        for quality in (88, 84, 80, 76, 72, 68, 64, 60):
+            candidate = _jpeg_bytes(jpeg_image, quality)
+            if _base64_size(len(candidate)) <= base64_cap:
+                break
+
+        while _base64_size(len(candidate)) > base64_cap and min(jpeg_image.size) > 128:
+            width = max(1, int(jpeg_image.width * 0.85))
+            height = max(1, int(jpeg_image.height * 0.85))
+            jpeg_image = jpeg_image.resize((width, height), Image.Resampling.LANCZOS)
+            candidate = _jpeg_bytes(jpeg_image, 72)
+        candidate_width, candidate_height = jpeg_image.size
+        resized = resized or candidate != raw
+
+    if resized:
+        logger.info(
+            "Prepared image for LLM {}: {}x{} {} bytes -> {}x{} {} bytes",
+            path or "(unknown)",
+            original_width,
+            original_height,
+            original_size,
+            candidate_width,
+            candidate_height,
+            len(candidate),
+        )
+
+    return PreparedImage(
+        raw=candidate,
+        mime=candidate_mime,
+        resized=resized,
+        original_size_bytes=original_size,
+        original_width=original_width,
+        original_height=original_height,
+        width=candidate_width,
+        height=candidate_height,
+    )
+
+
 def build_image_content_blocks(
     raw: bytes, mime: str, path: str, label: str
 ) -> list[dict[str, Any]]:
     """Build native image blocks plus a short text label."""
-    b64 = base64.b64encode(raw).decode()
+    prepared = prepare_image_for_llm(raw, mime, path=path)
+    b64 = base64.b64encode(prepared.raw).decode()
     return [
         {
             "type": "image_url",
-            "image_url": {"url": f"data:{mime};base64,{b64}"},
-            "_meta": {"path": path},
+            "image_url": {"url": f"data:{prepared.mime};base64,{b64}"},
+            "_meta": prepared.meta(path),
         },
-        {"type": "text", "text": label},
+        {"type": "text", "text": label + prepared.label_suffix()},
     ]
 
 

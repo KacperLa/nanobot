@@ -591,7 +591,8 @@ class LLMProvider(ABC):
                     if isinstance(b, dict) and b.get("type") == "image_url":
                         placeholder = (
                             "[Image not delivered to model — "
-                            "do not describe or reference it]"
+                            "do not describe or reference it; "
+                            "do not call read_file on this same image again in this turn]"
                         )
                         new_content.append({"type": "text", "text": placeholder})
                         found = True

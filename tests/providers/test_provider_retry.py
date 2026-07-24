@@ -310,6 +310,7 @@ async def test_non_transient_error_with_images_retries_without_images() -> None:
         if isinstance(content, list):
             assert all(b.get("type") != "image_url" for b in content)
             assert any("not delivered" in (b.get("text") or "").lower() for b in content)
+            assert any("do not call read_file" in (b.get("text") or "") for b in content)
 
 
 @pytest.mark.asyncio
@@ -377,6 +378,7 @@ async def test_image_fallback_without_meta_uses_default_placeholder() -> None:
         content = msg.get("content")
         if isinstance(content, list):
             assert any("not delivered" in (b.get("text") or "").lower() for b in content)
+            assert any("do not call read_file" in (b.get("text") or "") for b in content)
 
 
 @pytest.mark.asyncio
