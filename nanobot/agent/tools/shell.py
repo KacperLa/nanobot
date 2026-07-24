@@ -83,6 +83,7 @@ class ExecToolConfig(Base):
     timeout: int = Field(default=60, ge=0)  # Hard timeout (s); 0 = no limit. Not capped by the per-call max.
     path_prepend: str = ""
     path_append: str = ""
+    python_venv: str = ""
     sandbox: str = ""
     allowed_env_keys: list[str] = Field(default_factory=list)
     allow_patterns: list[str] = Field(default_factory=list)
@@ -187,6 +188,7 @@ class ExecTool(Tool):
             sandbox=cfg.sandbox,
             path_prepend=cfg.path_prepend,
             path_append=cfg.path_append,
+            python_venv=cfg.python_venv,
             allowed_env_keys=cfg.allowed_env_keys,
             allow_patterns=cfg.allow_patterns,
             deny_patterns=cfg.deny_patterns,
@@ -205,6 +207,7 @@ class ExecTool(Tool):
         sandbox: str = "",
         path_prepend: str = "",
         path_append: str = "",
+        python_venv: str = "",
         allowed_env_keys: list[str] | None = None,
         session_manager: Any | None = None,
     ):
@@ -221,6 +224,11 @@ class ExecTool(Tool):
             r">\s*/dev/sd",                  # write to disk
             r"\b(shutdown|reboot|poweroff)\b",  # system power
             r":\(\)\s*\{.*\};\s*:",          # fork bomb
+            r"--break-system-packages",       # bypasses Python externally-managed env protection
+            r"(?:^|[;&|]\s*)(?:sudo\s+)?(?:apt|apt-get|dnf|yum)\s+(?:install|remove|purge|upgrade|dist-upgrade|full-upgrade)\b",
+            r"(?:^|[;&|]\s*)(?:sudo\s+)?pacman\s+-S\b",
+            r"(?:^|[;&|]\s*)(?:sudo\s+)?/(?:usr|usr/local)/bin/pip[^\s]*\s+install\b",
+            r"(?:^|[;&|]\s*)(?:sudo\s+)?/(?:usr|usr/local)/bin/python[^\s]*\s+-m\s+pip\s+install\b",
             # Block writes to nanobot internal state files (#2989).
             # history.jsonl / .dream_cursor are managed by append_history();
             # direct writes corrupt the cursor format and crash /dream.
@@ -237,6 +245,7 @@ class ExecTool(Tool):
         self.webui_allow_local_service_access = webui_allow_local_service_access
         self.path_prepend = path_prepend
         self.path_append = path_append
+        self.python_venv = python_venv
         self.allowed_env_keys = allowed_env_keys or []
         self._session_manager = session_manager or DEFAULT_EXEC_SESSION_MANAGER
 
@@ -302,6 +311,10 @@ class ExecTool(Tool):
             return ToolResult.error("Error: Missing command. Provide command or cmd.")
         if max_output_chars is None:
             max_output_chars = max_output_tokens
+
+        venv_error = await self._ensure_python_venv()
+        if venv_error:
+            return venv_error
 
         prepared = self._prepare_command(command, working_dir, timeout, shell, login)
         if isinstance(prepared, str):
@@ -470,6 +483,18 @@ class ExecTool(Tool):
         effective_timeout = self._resolve_timeout(timeout)
         env = self._build_env()
 
+        if self.python_venv:
+            venv = self._resolved_python_venv()
+            venv_bin = str(venv / ("Scripts" if _IS_WINDOWS else "bin"))
+            env["VIRTUAL_ENV"] = str(venv)
+            env["PIP_REQUIRE_VIRTUALENV"] = "true"
+            env["PYTHONNOUSERSITE"] = "1"
+            if _IS_WINDOWS:
+                env["PATH"] = os.pathsep.join([venv_bin, env.get("PATH", "")])
+            else:
+                env["NANOBOT_PYTHON_VENV_BIN"] = venv_bin
+                command = f'export PATH="$NANOBOT_PYTHON_VENV_BIN:$PATH"; {command}'
+
         if self.path_prepend or self.path_append:
             if _IS_WINDOWS:
                 env["PATH"] = self._compose_path(env.get("PATH", ""))
@@ -488,6 +513,54 @@ class ExecTool(Tool):
             shell_program=shell_program,
             login=False if login is None else login,
         )
+
+    async def _ensure_python_venv(self) -> str | None:
+        """Create the configured Python venv before executing agent commands."""
+        if not self.python_venv:
+            return None
+
+        venv = self._resolved_python_venv()
+        bin_dir = "Scripts" if _IS_WINDOWS else "bin"
+        python = venv / bin_dir / ("python.exe" if _IS_WINDOWS else "python")
+        pip = venv / bin_dir / ("pip.exe" if _IS_WINDOWS else "pip")
+        if python.exists() and pip.exists():
+            return None
+
+        try:
+            venv.parent.mkdir(parents=True, exist_ok=True)
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "venv",
+                str(venv),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+            except asyncio.TimeoutError:
+                await self._kill_process(process)
+                return "Error: Timed out creating configured Python venv"
+        except Exception as exc:
+            return f"Error: Failed to create configured Python venv: {exc}"
+
+        if process.returncode != 0:
+            output = "\n".join(
+                part.decode("utf-8", errors="replace")
+                for part in (stdout, stderr)
+                if part
+            ).strip()
+            suffix = f": {output}" if output else ""
+            return f"Error: Failed to create configured Python venv{suffix}"
+
+        return None
+
+    def _resolved_python_venv(self) -> Path:
+        path = Path(os.path.expandvars(self.python_venv)).expanduser()
+        if path.is_absolute():
+            return path
+        base = Path(self.working_dir or os.getcwd())
+        return (base / path).resolve()
 
     def _compose_path(self, current_path: str) -> str:
         parts = []

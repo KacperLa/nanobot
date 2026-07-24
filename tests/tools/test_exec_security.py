@@ -399,3 +399,27 @@ def test_exec_blocks_outside_paths_from_subdirectory(tmp_path):
     )
     assert result is not None
     assert "path outside working dir" in result
+
+
+@pytest.mark.asyncio
+async def test_exec_blocks_break_system_packages():
+    """The agent must not bypass Python's externally-managed environment guard."""
+    tool = ExecTool()
+    result = await tool.execute(command="pip install Pillow --break-system-packages -q")
+    assert "blocked" in result
+
+
+@pytest.mark.asyncio
+async def test_exec_blocks_system_package_manager_install():
+    """System package installation belongs outside the agent exec tool path."""
+    tool = ExecTool()
+    result = await tool.execute(command="apt install -y python3-pil")
+    assert "blocked" in result
+
+
+@pytest.mark.asyncio
+async def test_exec_blocks_absolute_system_pip_install():
+    """Absolute system pip paths should not bypass venv containment."""
+    tool = ExecTool()
+    result = await tool.execute(command="/usr/bin/pip install Pillow")
+    assert "blocked" in result

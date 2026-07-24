@@ -168,3 +168,39 @@ async def test_exec_path_append_legitimate_path_still_works():
     tool = ExecTool(path_append="/opt/custom/bin")
     result = await tool.execute(command="echo $PATH")
     assert "/opt/custom/bin" in result
+
+
+@_UNIX_ONLY
+@pytest.mark.asyncio
+async def test_exec_python_venv_is_created_and_used(tmp_path):
+    """Configured Python venv should be created and prepended to PATH."""
+    venv = tmp_path / "tool-venv"
+    tool = ExecTool(python_venv=str(venv), timeout=60)
+
+    result = await tool.execute(
+        command=(
+            "python3 - <<'PY'\n"
+            "import os\n"
+            "import sys\n"
+            "print(sys.prefix)\n"
+            "print(os.environ.get('VIRTUAL_ENV'))\n"
+            "PY"
+        )
+    )
+
+    assert "Exit code: 0" in result
+    assert str(venv) in result
+    assert (venv / "bin" / "python").exists()
+
+
+@_UNIX_ONLY
+@pytest.mark.asyncio
+async def test_exec_python_venv_pip_resolves_inside_venv(tmp_path):
+    """pip should resolve from the configured venv, not system Python."""
+    venv = tmp_path / "tool-venv"
+    tool = ExecTool(python_venv=str(venv), timeout=60)
+
+    result = await tool.execute(command="python3 -m pip --version && pip --version")
+
+    assert "Exit code: 0" in result
+    assert str(venv) in result
