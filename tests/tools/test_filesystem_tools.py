@@ -1,5 +1,7 @@
 """Tests for enhanced filesystem tools: ReadFileTool, EditFileTool, ListDirTool."""
 
+import asyncio
+
 import pytest
 
 from nanobot.agent.tools.filesystem import (
@@ -515,3 +517,79 @@ class TestWorkspaceRestriction:
         )
         assert "Successfully edited" in result
         assert target.read_text(encoding="utf-8") == "after\n"
+
+
+@pytest.mark.asyncio
+async def test_read_file_offloads_to_worker_thread(tmp_path, monkeypatch):
+    tool = ReadFileTool(workspace=tmp_path)
+    called = {}
+
+    async def fake_to_thread(func, *args, **kwargs):
+        called["func"] = func
+        called["args"] = args
+        return "threaded"
+
+    monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+
+    result = await tool.execute(path="sample.txt", offset=3, limit=4)
+
+    assert result == "threaded"
+    assert called["func"] == tool._execute_sync
+    assert called["args"] == ("sample.txt", 3, 4, None, False)
+
+
+@pytest.mark.asyncio
+async def test_write_file_offloads_to_worker_thread(tmp_path, monkeypatch):
+    tool = WriteFileTool(workspace=tmp_path)
+    called = {}
+
+    async def fake_to_thread(func, *args, **kwargs):
+        called["func"] = func
+        called["args"] = args
+        return "threaded"
+
+    monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+
+    result = await tool.execute(path="sample.txt", content="hello")
+
+    assert result == "threaded"
+    assert called["func"] == tool._execute_sync
+    assert called["args"] == ("sample.txt", "hello")
+
+
+@pytest.mark.asyncio
+async def test_edit_file_offloads_to_worker_thread(tmp_path, monkeypatch):
+    tool = EditFileTool(workspace=tmp_path)
+    called = {}
+
+    async def fake_to_thread(func, *args, **kwargs):
+        called["func"] = func
+        called["args"] = args
+        return "threaded"
+
+    monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+
+    result = await tool.execute(path="sample.txt", old_text="a", new_text="b", replace_all=True)
+
+    assert result == "threaded"
+    assert called["func"] == tool._execute_sync
+    assert called["args"] == ("sample.txt", "a", "b", True, None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_list_dir_offloads_to_worker_thread(tmp_path, monkeypatch):
+    tool = ListDirTool(workspace=tmp_path)
+    called = {}
+
+    async def fake_to_thread(func, *args, **kwargs):
+        called["func"] = func
+        called["args"] = args
+        return "threaded"
+
+    monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+
+    result = await tool.execute(path=".", recursive=True, max_entries=25)
+
+    assert result == "threaded"
+    assert called["func"] == tool._execute_sync
+    assert called["args"] == (".", True, 25)

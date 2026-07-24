@@ -216,6 +216,20 @@ class FindFilesTool(_SearchTool):
         offset: int = 0,
         **kwargs: Any,
     ) -> str:
+        return await self._run_blocking(self._execute_sync, path, query, glob, type, include_dirs, sort, head_limit, offset, **kwargs)
+
+    def _execute_sync(
+        self,
+        path: str = ".",
+        query: str | None = None,
+        glob: str | None = None,
+        type: str | None = None,
+        include_dirs: bool = False,
+        sort: str = "path",
+        head_limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> str:
         try:
             target = self._resolve(path or ".")
             if not target.exists():
@@ -409,6 +423,25 @@ class GrepTool(_SearchTool):
         return "\n".join(block)
 
     async def execute(
+        self,
+        pattern: str,
+        path: str = ".",
+        glob: str | None = None,
+        type: str | None = None,
+        case_insensitive: bool = False,
+        fixed_strings: bool = False,
+        output_mode: str = "files_with_matches",
+        context_before: int = 0,
+        context_after: int = 0,
+        max_matches: int | None = None,
+        max_results: int | None = None,
+        head_limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> str:
+        return await self._run_blocking(self._execute_sync, pattern, path, glob, type, case_insensitive, fixed_strings, output_mode, context_before, context_after, max_matches, max_results, head_limit, offset, **kwargs)
+
+    def _execute_sync(
         self,
         pattern: str,
         path: str = ".",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from pathlib import Path
@@ -337,6 +338,62 @@ async def test_search_tools_reject_paths_outside_workspace(tmp_path: Path) -> No
     grep_result = await grep_tool.execute(pattern="secret", path=str(outside))
 
     assert grep_result.startswith("Error:")
+
+
+@pytest.mark.asyncio
+async def test_find_files_offloads_search_to_worker_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tool = FindFilesTool(workspace=tmp_path, allowed_dir=tmp_path)
+    called: dict[str, object] = {}
+
+    async def fake_to_thread(func, *args, **kwargs):
+        called["func"] = func
+        called["args"] = args
+        return "threaded"
+
+    monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+
+    result = await tool.execute(path="src", query="*.py")
+
+    assert result == "threaded"
+    assert called["func"] == tool._execute_sync
+    assert called["args"] == ("src", "*.py", None, None, False, "path", None, 0)
+
+
+@pytest.mark.asyncio
+async def test_grep_offloads_search_to_worker_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tool = GrepTool(workspace=tmp_path, allowed_dir=tmp_path)
+    called: dict[str, object] = {}
+
+    async def fake_to_thread(func, *args, **kwargs):
+        called["func"] = func
+        called["args"] = args
+        return "threaded"
+
+    monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+
+    result = await tool.execute(pattern="needle", path="src", output_mode="count")
+
+    assert result == "threaded"
+    assert called["func"] == tool._execute_sync
+    assert called["args"] == (
+        "needle",
+        "src",
+        None,
+        None,
+        False,
+        False,
+        "count",
+        0,
+        0,
+        None,
+        None,
+        None,
+        0,
+    )
 
 
 def test_agent_loop_registers_grep(tmp_path: Path) -> None:

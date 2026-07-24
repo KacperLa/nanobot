@@ -1,5 +1,6 @@
 """File system tools: read, write, edit, list."""
 
+import asyncio
 import difflib
 import mimetypes
 import os
@@ -99,6 +100,9 @@ class _FsTool(Tool):
             restrict_to_workspace=ctx.config.restrict_to_workspace,
             sandbox_restricts_workspace=sandbox_restricts,
         )
+
+    async def _run_blocking(self, func, *args: Any, **kwargs: Any) -> Any:
+        return await asyncio.to_thread(func, *args, **kwargs)
 
     @property
     def _file_states(self) -> FileStates:
@@ -276,6 +280,17 @@ class ReadFileTool(_FsTool):
         return True
 
     async def execute(
+        self,
+        path: str | None = None,
+        offset: int = 1,
+        limit: int | None = None,
+        pages: str | None = None,
+        force: bool = False,
+        **kwargs: Any,
+    ) -> Any:
+        return await self._run_blocking(self._execute_sync, path, offset, limit, pages, force, **kwargs)
+
+    def _execute_sync(
         self,
         path: str | None = None,
         offset: int = 1,
@@ -494,6 +509,9 @@ class WriteFileTool(_FsTool):
         )
 
     async def execute(self, path: str | None = None, content: str | None = None, **kwargs: Any) -> str:
+        return await self._run_blocking(self._execute_sync, path, content, **kwargs)
+
+    def _execute_sync(self, path: str | None = None, content: str | None = None, **kwargs: Any) -> str:
         try:
             if not path:
                 raise ValueError("Unknown path")
@@ -848,6 +866,14 @@ class EditFileTool(_FsTool):
         replace_all: bool = False, occurrence: int | None = None,
         line_hint: int | None = None, expected_replacements: int | None = None, **kwargs: Any,
     ) -> str:
+        return await self._run_blocking(self._execute_sync, path, old_text, new_text, replace_all, occurrence, line_hint, expected_replacements, **kwargs)
+
+    def _execute_sync(
+        self, path: str | None = None, old_text: str | None = None,
+        new_text: str | None = None,
+        replace_all: bool = False, occurrence: int | None = None,
+        line_hint: int | None = None, expected_replacements: int | None = None, **kwargs: Any,
+    ) -> str:
         try:
             if not path:
                 raise ValueError("Unknown path")
@@ -1071,6 +1097,12 @@ class ListDirTool(_FsTool):
         return True
 
     async def execute(
+        self, path: str | None = None, recursive: bool = False,
+        max_entries: int | None = None, **kwargs: Any,
+    ) -> str:
+        return await self._run_blocking(self._execute_sync, path, recursive, max_entries, **kwargs)
+
+    def _execute_sync(
         self, path: str | None = None, recursive: bool = False,
         max_entries: int | None = None, **kwargs: Any,
     ) -> str:
