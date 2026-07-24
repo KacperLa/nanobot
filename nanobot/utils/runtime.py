@@ -11,6 +11,19 @@ from loguru import logger
 from nanobot.utils.helpers import stringify_text_blocks
 
 _MAX_REPEAT_EXTERNAL_LOOKUPS = 2
+_IMAGE_FILE_EXTENSIONS = (
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".heic",
+    ".heif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".webp",
+)
 
 # Third same-target workspace violation in a turn escalates to "stop retrying".
 _MAX_REPEAT_WORKSPACE_VIOLATIONS = 2
@@ -101,6 +114,10 @@ def external_lookup_signature(tool_name: str, arguments: Any) -> str | None:
         query = str(arguments.get("query") or arguments.get("search_term") or "").strip()
         if query:
             return f"web_search:{query.lower()}"
+    if tool_name == "read_file":
+        path = str(arguments.get("path") or "").strip()
+        if path and path.split("?", 1)[0].lower().endswith(_IMAGE_FILE_EXTENSIONS):
+            return f"read_file:image:{path}"
     return None
 
 
@@ -122,6 +139,13 @@ def repeated_external_lookup_error(
         signature[:160],
         count,
     )
+    if signature.startswith("read_file:image:"):
+        return (
+            "Error: repeated image read blocked. "
+            "This image has already been supplied/read in this turn. "
+            "Use the image information already available, or explain that the current model "
+            "could not inspect the image."
+        )
     return (
         "Error: repeated external lookup blocked. "
         "Use the results you already have to answer, or try a meaningfully different source."
