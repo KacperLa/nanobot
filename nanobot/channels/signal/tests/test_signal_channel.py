@@ -822,6 +822,22 @@ class TestHandleDataMessageDM:
         assert ch.is_allowed("+19995559999") is False
 
     @pytest.mark.asyncio
+    async def test_dm_paired_sender_routes_message_without_allowlist_entry(self, monkeypatch):
+        approved = {"uuid-approved"}
+        monkeypatch.setattr(
+            "nanobot.channels.signal.runtime.is_approved",
+            lambda channel, sender_id: sender_id in approved,
+        )
+        ch, handled = self._make_dm_channel(policy="allowlist", allow_from=[])
+        params = _dm_envelope(source_number="", source_uuid="uuid-approved", message="hello")
+
+        await ch._handle_receive_notification(params)
+
+        assert len(handled) == 1
+        assert handled[0]["chat_id"] == "uuid-approved"
+        assert handled[0]["content"] == "hello"
+
+    @pytest.mark.asyncio
     async def test_dm_allowlist_matches_without_plus_prefix(self):
         """An allowlist entry without '+' must match a sender that carries '+'."""
         ch, handled = self._make_dm_channel(policy="allowlist", allow_from=["19995550001"])

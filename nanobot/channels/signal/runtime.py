@@ -864,7 +864,9 @@ class SignalChannel(BaseChannel):
             self.logger.debug("Ignoring DM from {} (DMs disabled)", sender_id)
             return False, chat_id
         if self.config.dm.policy == "allowlist":
-            if not self._sender_matches_allowlist(sender_id, self.config.dm.allow_from):
+            if not self._sender_matches_allowlist(
+                sender_id, self.config.dm.allow_from
+            ) and not self._sender_approved_via_pairing(sender_id):
                 self.logger.debug(
                     "Ignoring DM from {} (policy: {})", sender_id, self.config.dm.policy
                 )
